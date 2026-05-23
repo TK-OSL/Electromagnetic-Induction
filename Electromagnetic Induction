@@ -1,0 +1,1694 @@
+<!-- 
+=======================================================================================
+   PROJECT: สื่อการเรียนรู้อินเทอร์แอกทีฟเรื่อง "การเหนี่ยวนำแม่เหล็กไฟฟ้า" (Electromagnetic Induction)
+   DEVELOPER: พัฒนาและเขียนโค้ดโดย Gemini (AI) 
+   SUPPORTED BY: opensimlab.org
+   TARGET AUDIENCE: นักเรียนระดับชั้นมัธยมศึกษาตอนปลาย และผู้เริ่มต้นศึกษาฟิสิกส์แม่เหล็กไฟฟ้า
+   
+   ------------------------------------------------------------------------------------
+   DESCRIPTION:
+   แอปพลิเคชันหน้าเดียว (Single-file Web Application) ที่ทำงานบนเบราว์เซอร์อย่างสมบูรณ์ 
+   ช่วยให้นักเรียนสามารถทดลองเสมือนจริง (Virtual Lab) เพื่อทำความเข้าใจ "กฎการเหนี่ยวนำของฟาราเดย์" 
+   (Faraday's Law of Induction) และ "กฎของเลนซ์" (Lenz's Law) ผ่านภาพ 3D และกราฟความสัมพันธ์เรียลไทม์
+   
+   ------------------------------------------------------------------------------------
+   SYSTEM ARCHITECTURE (โครงสร้างและเทคโนโลยีหลัก):
+   1. UI/UX: Tailwind CSS สำหรับโครงสร้าง Responsive และระบบสองภาษา (i18n) สลับ EN/TH ไร้รอยต่อ
+   2. 3D WebGL Engine (Three.js + OrbitControls):
+      - วาดโครงขดลวดตัวนำสปริงเส้นเดียว (Helix Tube Geometry)
+      - จำลองแท่งแม่เหล็ก (N/S Label) และเส้นแรงสนามแม่เหล็ก (B-Field Lines Curve)
+      - ระบบกระแสไฟฟ้าไหลวิ่งวนตามเกลียวทองแดง (Lenz's Law Particle System)
+      - ควบคุมกล้องอิสระ (คลิกลากเพื่อหมุน, เลื่อนซูมเข้า-ออก)
+      - [NEW] ระบบเรนเดอร์ภาพ 3D ย่อย สำหรับแสดงผลจำลองสถานะ ฟลักซ์ Φ₁ และ Φ₂ เคียงข้างกันใน Tab 2 Practice
+   3. Real-time 2D Canvas Graphing:
+      - วาดและสตรีมมิ่งกราฟความสัมพันธ์ระหว่าง "แรงเคลื่อนไฟฟ้าเหนี่ยวนำ (EMF)" กับ "แกนเวลา (Time)" 
+   
+   ------------------------------------------------------------------------------------
+   PHYSICS & MATHEMATICAL MODELS (โมเดลฟิสิกส์และคณิตศาสตร์):
+   แอปพลิเคชันนี้ไม่ได้สุ่มตัวเลขแบบสุ่ม แต่ใช้ระบบฟิสิกส์คำนวณจริงอ้างอิงเวลา (Frame-rate Independent Physics):
+   
+   - ความเร็วของแม่เหล็ก (Velocity: v): 
+     คำนวณจากระยะเลื่อนเทียบกับเวลาจริงระหว่างเฟรม: v = dz / dt (ไม่ใช่ต่อเฟรม ป้องกันปัญหาเฟรมเรตหน้าจอต่างกัน)
+     
+   - ฟลักซ์แม่เหล็ก (Magnetic Flux: Φ): 
+     ใช้สมการระฆังคว่ำเกาส์เซียน (Gaussian Distribution) จำลองความเข้มสนามแม่เหล็กที่จะค่อย ๆ ลดลงตามแนวระนาบ Z 
+     และสลายตัวตามแนวรัศมีเยื้องศูนย์กลาง (Radial Offset Y) ด้วยฟังก์ชัน:
+     Φ(z, y) = Φ_max * exp(-k * z^2) * exp(-a * y^2)
+     
+   - แรงเคลื่อนไฟฟ้าเหนี่ยวนำ (Induced EMF: ε) ตามกฎของฟาราเดย์:
+     ε = -N * (dΦ / dt) = -N * (dΦ / dz) * (dz / dt)
+     จากการวิเคราะห์หาอนุพันธ์เชิงตัวเลข (Analytical Derivative) จะได้ความสัมพันธ์ที่ใช้รันแอนิเมชัน:
+     ε = 2 * k * N * Φ(z, y) * z * v
+     
+   - ทิศทางการหมุนของอิเล็กตรอน (Lenz's Law):
+     ทิศทางการเคลื่อนที่ของประจุสีเหลือง (Particles) จะสลับทิศทางโดยอิงตามเครื่องหมายของแรงดันไฟฟ้าเหนี่ยวนำ (ε)
+=======================================================================================
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Electromagnetic Induction</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Three.js: สำหรับเรนเดอร์ภาพ 3 มิติ และ OrbitControls: สำหรับควบคุมมุมกล้องหมุน/ซูม -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Sarabun:wght@400;500;600;700&display=swap');
+
+        body {
+            font-family: 'Inter', 'Sarabun', sans-serif;
+            background-color: #f8fafc;
+            color: #334155;
+            overflow-x: hidden;
+        }
+
+        /* ส่วนสไตล์ปุ่มสลับภาษา EN/TH (สอดคล้องตามโครงสร้าง UI ในภาพตัวอย่าง) */
+        .lang-switch-container {
+            background-color: #f1f5f9;
+            border-radius: 12px;
+            padding: 4px;
+            display: inline-flex;
+            position: relative;
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);
+            border: 1px solid #e2e8f0;
+        }
+        
+        .lang-slider {
+            position: absolute;
+            top: 4px;
+            bottom: 4px;
+            width: calc(50% - 4px);
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            transition: transform 0.3s cubic-bezier(0.4, 0.0, 0.2, 1);
+            z-index: 1;
+        }
+
+        .lang-btn {
+            position: relative;
+            z-index: 2;
+            padding: 8px 16px;
+            font-weight: 700;
+            font-size: 16px;
+            cursor: pointer;
+            border: none;
+            background: transparent;
+            width: 80px;
+            text-align: center;
+            transition: color 0.3s ease;
+        }
+
+        .lang-btn.en { color: #64748b; }
+        .lang-btn.th { color: #fb923c; }
+
+        .lang-switch-container[data-active="en"] .lang-btn.en { color: #3b82f6; }
+        .lang-switch-container[data-active="en"] .lang-btn.th { color: #fdba74; }
+        .lang-switch-container[data-active="en"] .lang-slider { transform: translateX(0); }
+
+        .lang-switch-container[data-active="th"] .lang-btn.th { color: #ea580c; }
+        .lang-switch-container[data-active="th"] .lang-btn.en { color: #94a3b8; }
+        .lang-switch-container[data-active="th"] .lang-slider { transform: translateX(100%); }
+
+        /* พื้นที่วางเอนจินจำลอง 3 มิติและระบบโวลต์มิเตอร์ด้านล่าง */
+        #canvas-container {
+            width: 100%;
+            height: 450px;
+            background: linear-gradient(to bottom, #1e293b, #0f172a);
+            border-radius: 12px;
+            overflow: hidden;
+            position: relative;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            cursor: grab;
+        }
+        
+        #canvas-container:active {
+            cursor: grabbing;
+        }
+
+        .voltmeter {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(255, 255, 255, 0.95);
+            padding: 15px 30px;
+            border-radius: 12px;
+            text-align: center;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+            min-width: 220px;
+            border: 2px solid #e2e8f0;
+            pointer-events: none; /* เพื่อไม่ให้ขัดขวางการคลิกเมาส์บน 3D Canvas */
+        }
+
+        .meter-gauge {
+            width: 100%;
+            height: 10px;
+            background: #cbd5e1;
+            border-radius: 5px;
+            margin-top: 10px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .meter-center {
+            position: absolute;
+            top: 0;
+            left: 50%;
+            width: 2px;
+            height: 100%;
+            background: #475569;
+        }
+
+        .meter-fill {
+            position: absolute;
+            top: 0;
+            left: 50%;
+            height: 100%;
+            width: 0%;
+            background: #ef4444; 
+            transition: width 0.1s, left 0.1s, background-color 0.1s;
+        }
+
+        /* จัดแต่งสไลเดอร์แบบกำหนดเอง (Custom Ranges) */
+        input[type=range] {
+            -webkit-appearance: none;
+            width: 100%;
+            background: transparent;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 20px;
+            width: 20px;
+            border-radius: 50%;
+            background: #3b82f6;
+            cursor: pointer;
+            margin-top: -8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 6px;
+            cursor: pointer;
+            background: #cbd5e1;
+            border-radius: 3px;
+        }
+
+        .math-block {
+            background-color: #f8fafc;
+            border-left: 4px solid #3b82f6;
+            padding: 16px;
+            margin: 16px 0;
+            border-radius: 0 8px 8px 0;
+            font-family: 'Times New Roman', Times, serif;
+            font-size: 1.25rem;
+            text-align: center;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body class="antialiased">
+
+    <!-- แถบเมนูด้านบนสุด (Navigation Header) -->
+    <nav class="bg-white shadow-sm sticky top-0 z-50">
+        <div class="max-w-6xl mx-auto px-4 py-3 flex justify-between items-center">
+            <div class="font-bold text-xl text-blue-600 flex items-center gap-2">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                <span data-i18n="navTitle">Physics Interactive</span>
+            </div>
+            
+            <div class="lang-switch-container" data-active="en" onclick="toggleLanguage()">
+                <div class="lang-slider"></div>
+                <button class="lang-btn en">EN</button>
+                <button class="lang-btn th">TH</button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- ส่วนเนื้อหาหลัก (Main Content Layout) -->
+    <main class="max-w-6xl mx-auto px-4 py-8">
+        
+        <!-- ส่วนหัวข้อบทเรียน (Hero Section) -->
+        <div class="text-center mb-10">
+            <h1 class="text-4xl font-extrabold text-gray-900 mb-4" data-i18n="pageTitle">Electromagnetic Induction</h1>
+            <p class="text-lg text-gray-600 max-w-3xl mx-auto" data-i18n="pageIntro">
+                Discover how a moving magnetic field can generate electricity. Move the magnet through the coil to see Faraday's Law of Induction in action.
+            </p>
+        </div>
+
+        <!-- แผงทฤษฎีบทและสูตรคำนวณทางคณิตศาสตร์ฟิสิกส์ (At the Top) -->
+        <div class="space-y-8 mb-12">
+            <!-- ซ้าย: การอธิบายแบบทีละขั้น (Step-by-Step) -->
+            <div class="bg-white rounded-2xl shadow-sm p-6 border border-slate-100">
+                <h2 class="text-2xl font-bold mb-6 text-gray-800" data-i18n="stepTitle">How it works (Step-by-Step)</h2>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="flex gap-4">
+                        <div class="flex-shrink-0 w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-xl">1</div>
+                        <div>
+                            <h3 class="font-bold text-lg text-gray-900" data-i18n="step1Title">Movement is Key</h3>
+                            <p class="text-gray-600 mt-1" data-i18n="step1Desc">When the magnet is stationary, no electricity is generated, even if it is inside the coil. Induction requires <strong>relative motion</strong> between the magnet and the coil.</p>
+                        </div>
+                    </div>
+                    
+                    <div class="flex gap-4">
+                        <div class="flex-shrink-0 w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-xl">2</div>
+                        <div>
+                            <h3 class="font-bold text-lg text-gray-900" data-i18n="step2Title">Changing Magnetic Flux</h3>
+                            <p class="text-gray-600 mt-1" data-i18n="step2Desc">As the magnet moves, the number of magnetic field lines passing through the area of the coil changes. This is called a change in magnetic flux (ΔΦ).</p>
+                        </div>
+                    </div>
+
+                    <div class="flex gap-4">
+                        <div class="flex-shrink-0 w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-xl">3</div>
+                        <div>
+                            <h3 class="font-bold text-lg text-gray-900" data-i18n="step3Title">Induced EMF</h3>
+                            <p class="text-gray-600 mt-1" data-i18n="step3Desc">According to Faraday's Law, this changing magnetic flux induces an Electromotive Force (EMF) or voltage in the wire. Faster movement or more coil turns results in a higher voltage.</p>
+                        </div>
+                    </div>
+
+                    <div class="flex gap-4">
+                        <div class="flex-shrink-0 w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-xl">4</div>
+                        <div>
+                            <h3 class="font-bold text-lg text-gray-900" data-i18n="step4Title">The Negative Sign (Lenz's Law)</h3>
+                            <p class="text-gray-600 mt-1" data-i18n="step4Desc">The negative sign in the formula represents <strong>Lenz's Law</strong>. It indicates that the induced EMF creates a current whose magnetic field <em>opposes</em> the change in magnetic flux that produced it.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ขวา: บล็อกสูตรคณิตศาสตร์และโจทย์ตัวอย่าง (จัดตำแหน่งใหม่ใต้ Step-by-Step เป็นแบบแถวกว้าง 3 คอลัมน์ด้านใน) -->
+            <div class="bg-blue-50 rounded-2xl p-6 border border-blue-100 shadow-sm grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <!-- คอลัมน์ที่ 1: หัวข้อและบล็อกสูตรคณิตศาสตร์ -->
+                <div class="flex flex-col justify-center">
+                    <h3 class="text-xl font-bold text-blue-900 mb-2" data-i18n="calcTitle">Faraday's Law Formula</h3>
+                    <p class="text-sm text-blue-800 mb-4" data-i18n="calcDesc">The magnitude of the induced EMF can be calculated using:</p>
+                    
+                    <div class="math-block bg-white shadow-md flex items-center justify-center font-serif text-3xl py-6 rounded-xl border border-blue-100">
+                        <span class="text-emerald-600 font-bold mr-3">&epsilon;</span>
+                        <span class="mr-3">= -</span>
+                        <span class="text-amber-600 font-bold mr-3">N</span>
+                        <span class="inline-flex flex-col items-center align-middle">
+                            <span class="border-b-2 border-slate-700 px-3 pb-1 leading-none text-sky-600 font-bold">&Delta;&Phi;</span>
+                            <span class="px-3 pt-1.5 leading-none text-rose-500 font-bold">&Delta;t</span>
+                        </span>
+                    </div>
+                </div>
+                
+                <!-- คอลัมน์ที่ 2: บล็อกคู่มือตัวแปร -->
+                <div class="flex flex-col justify-center">
+                    <ul class="text-sm text-blue-900 space-y-3 bg-white/50 p-4 rounded-xl border border-blue-100">
+                        <li class="flex items-center gap-2">
+                            <span class="w-7 h-7 flex-shrink-0 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold font-serif text-sm">&epsilon;</span>
+                            <div><strong>&epsilon; (Epsilon):</strong> <span data-i18n="varE" class="text-slate-600">Induced Voltage / EMF (Volts)</span></div>
+                        </li>
+                        <li class="flex items-center gap-2">
+                            <span class="w-7 h-7 flex-shrink-0 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center font-bold font-serif text-sm">N</span>
+                            <div><strong>N:</strong> <span data-i18n="varN" class="text-slate-600">Number of turns in the coil</span></div>
+                        </li>
+                        <li class="flex items-center gap-2">
+                            <span class="w-7 h-7 flex-shrink-0 rounded-full bg-sky-100 text-sky-700 flex items-center justify-center font-bold font-serif text-sm">&Delta;&Phi;</span>
+                            <div><strong>&Delta;&Phi; (Delta Phi):</strong> <span data-i18n="varPhi" class="text-slate-600">Change in magnetic flux (Webers)</span></div>
+                        </li>
+                        <li class="flex items-center gap-2">
+                            <span class="w-7 h-7 flex-shrink-0 rounded-full bg-rose-100 text-rose-700 flex items-center justify-center font-bold font-serif text-sm">&Delta;t</span>
+                            <div><strong>&Delta;t (Delta t):</strong> <span data-i18n="varT" class="text-slate-600">Time taken (Seconds)</span></div>
+                        </li>
+                    </ul>
+                </div>
+
+                <!-- คอลัมน์ที่ 3: โจทย์แสดงวิธีคำนวณแบบอินเทอร์แอกทีฟพร้อม Tab สองทางเลือก -->
+                <div class="border-t lg:border-t-0 lg:border-l border-blue-200 pt-4 lg:pt-0 lg:pl-6 flex flex-col justify-start">
+                    <!-- Practice Tab Switcher -->
+                    <div class="flex border-b border-blue-200 mb-4 text-xs font-semibold">
+                        <button id="tab-direct-btn" onclick="switchPracticeTab('direct')" class="flex-1 py-2 text-center border-b-2 border-blue-600 text-blue-600 transition" data-i18n="calcTabA">1. Direct ΔΦ</button>
+                        <button id="tab-flux-btn" onclick="switchPracticeTab('flux')" class="flex-1 py-2 text-center text-gray-500 hover:text-blue-600 transition" data-i18n="calcTabB">2. Φ₁ & Φ₂ (3D)</button>
+                    </div>
+
+                    <!-- TAB 1: Direct Delta Flux (โจทย์ข้อที่ 1) -->
+                    <div id="practice-direct-panel" class="space-y-3">
+                        <h4 class="font-bold text-blue-900 text-sm mb-1" data-i18n="exTitle">Interactive Practice:</h4>
+                        <p class="text-xs text-blue-700 mb-3" data-i18n="exProblem">Adjust the values of N, ΔΦ, and Δt below to calculate the induced EMF (ε) in real-time:</p>
+                        
+                        <div class="space-y-2 mb-4 bg-white/60 p-3 rounded-xl border border-blue-100 text-xs">
+                            <div class="flex items-center justify-between">
+                                <span class="font-semibold text-blue-950" data-i18n="calcLabelN">Number of turns (N):</span>
+                                <input type="number" id="calc-n" value="100" min="1" max="1000" class="w-20 px-2 py-0.5 text-center bg-white border border-blue-200 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono text-sm">
+                            </div>
+                            <div class="flex items-center justify-between">
+                                <span class="font-semibold text-blue-950" data-i18n="calcLabelPhi">Flux change (ΔΦ) Wb:</span>
+                                <input type="number" id="calc-phi" value="0.05" step="0.01" class="w-20 px-2 py-0.5 text-center bg-white border border-blue-200 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono text-sm">
+                            </div>
+                            <div class="flex items-center justify-between">
+                                <span class="font-semibold text-blue-950" data-i18n="calcLabelT">Time interval (Δt) s:</span>
+                                <input type="number" id="calc-t" value="0.10" step="0.01" min="0.01" class="w-20 px-2 py-0.5 text-center bg-white border border-blue-200 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono text-sm">
+                            </div>
+                        </div>
+
+                        <!-- สมการแก้โจทย์ข้อ 1 -->
+                        <div class="font-serif text-xl text-slate-800 font-semibold table mx-auto bg-white p-4 rounded-xl shadow-sm border border-slate-100 w-full">
+                            <div class="table-row">
+                                <div class="table-cell text-right pr-2 pb-3 text-emerald-600 font-bold">&epsilon;</div>
+                                <div class="table-cell text-center px-2 pb-3 text-slate-400">=</div>
+                                <div class="table-cell text-left pl-2 pb-3 flex items-center">
+                                    <span class="mr-2">-<span id="display-n" class="text-amber-600 font-bold">100</span> &times;</span>
+                                    <span class="inline-flex flex-col items-center align-middle">
+                                        <span id="display-phi" class="border-b-2 border-slate-400 px-2 pb-1 leading-none text-sky-600 font-bold">0.05</span>
+                                        <span id="display-t" class="px-2 pt-1 leading-none text-rose-500 font-bold">0.10</span>
+                                    </span>
+                                </div>
+                            </div>
+                            <div class="table-row">
+                                <div class="table-cell text-right pr-2 text-emerald-600 font-bold">&epsilon;</div>
+                                <div class="table-cell text-center px-2 text-slate-400">=</div>
+                                <div class="table-cell text-left pl-2 text-emerald-600 font-bold"><span id="display-result">-50.00</span> V</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- TAB 2: Phi1 & Phi2 + 3D Visual (โจทย์ข้อที่ 2 ใหม่) -->
+                    <div id="practice-flux-panel" class="space-y-3 hidden">
+                        <p class="text-xs text-blue-700" data-i18n="exProblemB">Adjust Φ₁ and Φ₂ below to calculate ΔΦ and find the induced EMF (ε) in real-time:</p>
+                        
+                        <!-- ช่องกรอกโจทย์ข้อ 2 -->
+                        <div class="space-y-2 bg-white/60 p-3 rounded-xl border border-blue-100 text-xs shadow-inner">
+                            <div class="flex items-center justify-between">
+                                <span class="font-semibold text-blue-950" data-i18n="calcLabelN">Number of turns (N):</span>
+                                <input type="number" id="calc-b-n" value="100" min="1" max="1000" class="w-20 px-2 py-0.5 text-center bg-white border border-blue-200 rounded-md font-mono text-sm">
+                            </div>
+                            <div class="flex items-center justify-between">
+                                <span class="font-semibold text-blue-950" data-i18n="calcLabelPhi1">Initial Flux (Φ₁):</span>
+                                <input type="number" id="calc-phi1" value="0.12" step="0.01" min="0.00" max="0.50" class="w-20 px-2 py-0.5 text-center bg-white border border-blue-200 rounded-md font-mono text-sm">
+                            </div>
+                            <div class="flex items-center justify-between">
+                                <span class="font-semibold text-blue-950" data-i18n="calcLabelPhi2">Final Flux (Φ₂):</span>
+                                <input type="number" id="calc-phi2" value="0.48" step="0.01" min="0.00" max="0.50" class="w-20 px-2 py-0.5 text-center bg-white border border-blue-200 rounded-md font-mono text-sm">
+                            </div>
+                            <div class="flex items-center justify-between">
+                                <span class="font-semibold text-blue-950" data-i18n="calcLabelT">Time interval (Δt):</span>
+                                <input type="number" id="calc-b-t" value="0.10" step="0.01" min="0.01" class="w-20 px-2 py-0.5 text-center bg-white border border-blue-200 rounded-md font-mono text-sm">
+                            </div>
+                        </div>
+
+                        <!-- [NEW] WebGL 3D Container แสดงภาพสามมิติเปรียบเทียบฟลักซ์ Φ₁ และ Φ₂ -->
+                        <div id="flux-3d-container" class="w-full h-44 bg-slate-950 rounded-xl border border-slate-800 my-2 overflow-hidden relative">
+                            <!-- ข้อความเลย์เอาต์แสดงขั้วเหนือใต้และจำลองสถานะ -->
+                            <div class="absolute top-2 left-2 bg-slate-900/80 text-[10px] px-2 py-0.5 rounded text-amber-400 font-bold border border-slate-700/30" data-i18n="state1Label">State 1 (Φ₁)</div>
+                            <div class="absolute top-2 right-2 bg-slate-900/80 text-[10px] px-2 py-0.5 rounded text-cyan-400 font-bold border border-slate-700/30" data-i18n="state2Label">State 2 (Φ₂)</div>
+                        </div>
+
+                        <!-- สมการคณิตศาสตร์ Aligned ตรงหลักวิชาการสำหรับโจทย์ข้อ 2 -->
+                        <div class="space-y-2">
+                            <!-- ขั้นที่ 1: คำนวณหา Delta Flux -->
+                            <div class="bg-white/80 p-2.5 rounded-xl border border-slate-100 shadow-sm text-xs">
+                                <div class="font-bold text-blue-900 mb-1" data-i18n="calcStep1">Step 1: Find ΔΦ</div>
+                                <div class="font-serif text-sm text-slate-800 font-semibold table mx-auto">
+                                    <div class="table-row">
+                                        <div class="table-cell text-right pr-2">&Delta;&Phi;</div>
+                                        <div class="table-cell text-center px-2 text-slate-400">=</div>
+                                        <div class="table-cell text-left pl-2">&Phi;₂ - &Phi;₁</div>
+                                    </div>
+                                    <div class="table-row">
+                                        <div class="table-cell text-right pr-2">&Delta;&Phi;</div>
+                                        <div class="table-cell text-center px-2 text-slate-400">=</div>
+                                        <div class="table-cell text-left pl-2"><span id="display-b-phi2">0.080</span> - <span id="display-b-phi1">0.020</span></div>
+                                    </div>
+                                    <div class="table-row">
+                                        <div class="table-cell text-right pr-2 text-sky-600 font-bold">&Delta;&Phi;</div>
+                                        <div class="table-cell text-center px-2 text-slate-400">=</div>
+                                        <div class="table-cell text-left pl-2 text-sky-600 font-bold"><span id="display-b-deltaphi">0.060</span> Wb</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- ขั้นที่ 2: แทนค่าฟาราเดย์หาความต่างศักย์เหนี่ยวนำ -->
+                            <div class="bg-white/80 p-2.5 rounded-xl border border-slate-100 shadow-sm text-xs">
+                                <div class="font-bold text-blue-900 mb-1" data-i18n="calcStep2">Step 2: Find ε</div>
+                                <div class="font-serif text-sm text-slate-800 font-semibold table mx-auto w-full">
+                                    <div class="table-row">
+                                        <div class="table-cell text-right pr-2 pb-2 text-emerald-600 font-bold">&epsilon;</div>
+                                        <div class="table-cell text-center px-2 pb-2 text-slate-400">=</div>
+                                        <div class="table-cell text-left pl-2 pb-2 flex items-center">
+                                            <span class="mr-2">-<span id="display-b-n" class="text-amber-600 font-bold">100</span> &times;</span>
+                                            <span class="inline-flex flex-col items-center align-middle">
+                                                <span id="display-b-num-phi" class="border-b-2 border-slate-400 px-2 pb-1 leading-none text-sky-600 font-bold">0.060</span>
+                                                <span id="display-b-num-t" class="px-2 pt-1 leading-none text-rose-500 font-bold">0.10</span>
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <div class="table-row">
+                                        <div class="table-cell text-right pr-2 text-emerald-600 font-bold">&epsilon;</div>
+                                        <div class="table-cell text-center px-2 text-slate-400">=</div>
+                                        <div class="table-cell text-left pl-2 text-emerald-600 font-bold"><span id="display-b-result">-60.00</span> V</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ส่วนของเครื่องมือจำลองแบบอินเทอร์แอกทีฟ 3D -->
+        <div class="bg-white rounded-2xl shadow-lg p-6 mb-12">
+            <div class="flex justify-between items-end mb-6">
+                <h2 class="text-2xl font-bold text-gray-800" data-i18n="simTitle">Interactive 3D Simulation</h2>
+            </div>
+
+            <!-- ปุ่มตัวเลือกสถานการณ์เรียนรู้ (Educational Presets) อยู่เหนือกราฟฟิก 3D -->
+            <div class="mb-6">
+                <h3 class="text-lg font-bold text-gray-800 mb-3" data-i18n="presetTitle">Educational Scenarios</h3>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <button id="btn-preset-p1" onclick="setPreset('p1')" class="preset-btn bg-white border border-blue-600 text-blue-600 hover:bg-blue-50 px-3 py-2 rounded-lg text-sm font-semibold transition shadow-sm" data-i18n="preset1">1. Push In</button>
+                    <button id="btn-preset-p2" onclick="setPreset('p2')" class="preset-btn bg-white border border-blue-600 text-blue-600 hover:bg-blue-50 px-3 py-2 rounded-lg text-sm font-semibold transition shadow-sm" data-i18n="preset2">2. Pull Out</button>
+                    <button id="btn-preset-p3" onclick="setPreset('p3')" class="preset-btn bg-white border border-blue-600 text-blue-600 hover:bg-blue-50 px-3 py-2 rounded-lg text-sm font-semibold transition shadow-sm" data-i18n="preset3">3. Hold Stationary</button>
+                    <button id="btn-preset-p4" onclick="setPreset('p4')" class="preset-btn bg-white border border-blue-600 text-blue-600 hover:bg-blue-50 px-3 py-2 rounded-lg text-sm font-semibold transition shadow-sm" data-i18n="preset4">4. Continuous Oscillation</button>
+                </div>
+            </div>
+
+            <!-- แถบสไลเดอร์การควบคุม (Sliders Control Panel) อยู่เหนือกราฟฟิก 3D -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6 mb-8 bg-slate-50 p-5 rounded-xl border border-slate-100">
+                <!-- ควบคุมตำแหน่งแม่เหล็กบนแกน Z -->
+                <div>
+                    <div class="flex justify-between items-center mb-2">
+                        <label class="font-semibold text-gray-700 text-sm" data-i18n="ctrlMagnet">Magnet Position</label>
+                    </div>
+                    <input type="range" id="magnet-slider" min="-15" max="15" step="0.1" value="-15">
+                    <div class="flex justify-between text-xs text-gray-400 mt-1">
+                        <span data-i18n="posLeft">Outside (Left)</span>
+                        <span data-i18n="posCenter">Inside Coil</span>
+                        <span data-i18n="posRight">Outside (Right)</span>
+                    </div>
+                </div>
+
+                <!-- ควบคุมระยะเยื้องแกนตามแนวรัศมี Y -->
+                <div>
+                    <div class="flex justify-between items-center mb-2">
+                        <label class="font-semibold text-gray-700 text-sm" data-i18n="ctrlOffset">Distance from Centerline</label>
+                        <span class="font-bold text-blue-600 text-sm" id="offset-val">0.0</span>
+                    </div>
+                    <input type="range" id="offset-slider" min="0" max="6" step="0.1" value="0">
+                    <div class="flex justify-between text-xs text-gray-400 mt-1">
+                        <span data-i18n="posOnAxis">Centered (0.0)</span>
+                        <span data-i18n="posOffAxis">Off-axis (6.0)</span>
+                    </div>
+                </div>
+
+                <!-- ควบคุมขีดจำกัดระยะเดินทางสูงสุดของแม่เหล็ก -->
+                <div>
+                    <div class="flex justify-between items-center mb-2">
+                        <label class="font-semibold text-gray-700 text-sm" data-i18n="ctrlMaxPos">Max Position Limit</label>
+                        <span class="font-bold text-blue-600 text-sm" id="max-pos-val">15.0</span>
+                    </div>
+                    <input type="range" id="max-pos-slider" min="5" max="25" step="0.5" value="15">
+                    <div class="flex justify-between text-xs text-gray-400 mt-1">
+                        <span>5.0</span>
+                        <span>25.0</span>
+                    </div>
+                </div>
+
+                <!-- ควบคุมความหนาแน่นขดลวด (N) -->
+                <div>
+                    <div class="flex justify-between items-center mb-2">
+                        <label class="font-semibold text-gray-700 text-sm" data-i18n="ctrlTurns">Number of Coil Turns (N)</label>
+                        <span class="font-bold text-blue-600 text-sm" id="turns-val">5</span>
+                    </div>
+                    <input type="range" id="turns-slider" min="1" max="100" step="1" value="5">
+                    <div class="flex justify-between text-xs text-gray-400 mt-1">
+                        <span>1</span>
+                        <span>100</span>
+                    </div>
+                </div>
+
+                <!-- ควบคุมความเร็วสำหรับการจำลองอัตโนมัติ -->
+                <div>
+                    <div class="flex justify-between items-center mb-2">
+                        <label class="font-semibold text-gray-700 text-sm" data-i18n="ctrlSpeed">Movement Speed</label>
+                        <span class="font-bold text-blue-600 text-sm" id="speed-val">1.0x</span>
+                    </div>
+                    <input type="range" id="speed-slider" min="0.2" max="3.0" step="0.1" value="1.0">
+                    <div class="flex justify-between text-xs text-gray-400 mt-1">
+                        <span>0.2x</span>
+                        <span>3.0x</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- ส่วนการแสดงผลหลัก: ภาพ 3D ด้านซ้าย และกราฟแสดงผลแบบเวลาจริงด้านขวา -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <!-- พื้นที่ภาพจำลอง 3 มิติ (Col Span 2) -->
+                <div class="lg:col-span-2 relative">
+                    <div id="canvas-container">
+                        <!-- Three.js Rendered Output จะทำงานตรงนี้ -->
+                        
+                        <!-- หน้าต่างเฝ้าสังเกตค่าฟลักซ์แม่เหล็กแบบลอยตัว (Flux Monitor Widget) -->
+                        <div class="absolute top-4 left-4 bg-slate-900/90 text-white p-4 rounded-xl shadow-lg border border-slate-700/50 backdrop-blur-sm z-10 w-64 pointer-events-none">
+                            <div class="text-xs font-bold text-sky-400 uppercase tracking-wider mb-2" data-i18n="fluxMonitorTitle">Magnetic Flux (&Delta;&Phi;)</div>
+                            <div class="space-y-2 text-xs font-mono">
+                                <div class="flex justify-between items-center bg-slate-800/80 p-2 rounded">
+                                    <span class="text-slate-400" data-i18n="flux1">&Phi;₁ (Initial)</span>
+                                    <span id="phi1-val" class="font-bold text-amber-400">0.000 Wb</span>
+                                </div>
+                                <div class="flex justify-between items-center bg-slate-800/80 p-2 rounded">
+                                    <span class="text-slate-400" data-i18n="flux2">&Phi;₂ (Current)</span>
+                                    <span id="phi2-val" class="font-bold text-sky-400">0.000 Wb</span>
+                                </div>
+                                <div class="flex justify-between items-center bg-slate-950/80 p-2 rounded border-t border-slate-700">
+                                    <span class="text-slate-200 font-bold" data-i18n="fluxDelta">&Delta;&Phi; (&Phi;₂ - &Phi;₁)</span>
+                                    <span id="deltaphi-val" class="font-bold text-emerald-400">0.000 Wb</span>
+                                </div>
+                            </div>
+                            <!-- ไอคอนและตัวบ่งชี้ทิศทางการเปลี่ยนแปลงของสนามแม่เหล็ก -->
+                            <div class="mt-2 text-[11px] text-slate-300 flex items-center gap-1 bg-slate-950/50 py-1 px-2 rounded">
+                                <span id="flux-trend-icon">🛑</span>
+                                <span id="flux-trend-text" data-i18n="fluxStationary">No change in flux</span>
+                            </div>
+                        </div>
+
+                        <!-- แถบเปลี่ยนมุมมองควบคุมกล้องอย่างรวดเร็ว (Camera Controls Quick Panel) -->
+                        <div class="absolute top-4 right-4 flex flex-col gap-2 z-10">
+                            <button onclick="setView('reset')" class="bg-white/90 hover:bg-white text-gray-700 px-3 py-1.5 rounded shadow text-sm font-medium transition border border-gray-200" data-i18n="viewReset">Reset View</button>
+                            <button onclick="setView('top')" class="bg-white/90 hover:bg-white text-gray-700 px-3 py-1.5 rounded shadow text-sm font-medium transition border border-gray-200" data-i18n="viewTop">Top View</button>
+                            <button onclick="setView('front')" class="bg-white/90 hover:bg-white text-gray-700 px-3 py-1.5 rounded shadow text-sm font-medium transition border border-gray-200" data-i18n="viewFront">Front View</button>
+                        </div>
+
+                        <!-- แผงหน้าปัดแสดงโวลต์มิเตอร์ (Analog-Style Digital Voltmeter) -->
+                        <div class="voltmeter">
+                            <div class="text-sm font-semibold text-gray-500 uppercase tracking-wide" data-i18n="voltmeterLabel">Induced Voltage (EMF)</div>
+                            <div class="text-2xl font-bold text-gray-800 mt-1"><span id="voltage-value">0.00</span> V</div>
+                            <div class="meter-gauge">
+                                <div class="meter-center"></div>
+                                <div class="meter-fill" id="meter-fill"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- พื้นที่แสดงผลกราฟคลื่นไฟฟ้าเหนี่ยวนำกับเวลา (HTML5 Canvas 2D Graph) -->
+                <div class="bg-slate-900 rounded-xl p-4 flex flex-col justify-between shadow-inner">
+                    <div class="flex justify-between items-center mb-2">
+                        <span class="text-slate-300 font-bold text-sm" data-i18n="graphTitle">Voltage vs Time Graph</span>
+                        <span class="text-xs text-slate-500" data-i18n="graphRealtime">Real-time</span>
+                    </div>
+                    <!-- พื้นผิว Canvas สำหรับเรนเดอร์กราฟสตรีมมิ่ง 2 มิติ -->
+                    <canvas id="graph-canvas" class="w-full h-full min-h-[220px] bg-slate-950 rounded-lg border border-slate-800"></canvas>
+                    <div class="flex justify-between text-[10px] text-slate-500 mt-2 px-1">
+                        <span>t = -5s</span>
+                        <span>t = 0 (Now)</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="text-center mt-3 text-sm text-gray-500 flex items-center justify-center gap-1">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122"></path></svg>
+                <span data-i18n="instruction3D">💡 Tip: Click and drag to rotate the 3D view. Scroll to zoom.</span>
+            </div>
+        </div>
+        
+        <!-- แถบเครดิตเว็บบนท้ายหน้าเว็บ (Footer) -->
+        <footer class="mt-12 mb-8 text-center text-gray-500 text-sm border-t border-gray-200 pt-6">
+            <p data-i18n="footerPowered">Powered by <a href="https://opensimlab.org" target="_blank" class="text-blue-600 hover:underline font-medium">opensimlab.org</a></p>
+            <p class="mt-1" data-i18n="footerCoded">Coded by Gemini (AI)</p>
+        </footer>
+
+    </main>
+
+    <script>
+        /**
+         * =========================================================================
+         * สคริปต์ควบคุมและเอนจินจำลองเชิงฟิสิกส์ 
+         * =========================================================================
+         */
+
+        // =========================================================================
+        // PART 1: คลังเก็บคำแปลและระบบสลับภาษา (i18n Localization Engine)
+        // =========================================================================
+        const translations = {
+            en: {
+                navTitle: "Physics Interactive",
+                pageTitle: "Electromagnetic Induction",
+                pageIntro: "Discover how a moving magnetic field can generate electricity. Move the magnet through the coil to see Faraday's Law of Induction in action.",
+                simTitle: "Interactive 3D Simulation",
+                instruction3D: "💡 Tip: Click and drag to rotate the 3D view. Scroll to zoom.",
+                voltmeterLabel: "Induced Voltage (EMF)",
+                ctrlMagnet: "Magnet Position",
+                posLeft: "Outside (Left)",
+                posCenter: "Inside Coil",
+                posRight: "Outside (Right)",
+                ctrlTurns: "Number of Coil Turns (N)",
+                ctrlSpeed: "Movement Speed",
+                ctrlOffset: "Distance from Centerline",
+                ctrlMaxPos: "Max Position Limit",
+                posOnAxis: "Centered (0.0)",
+                posOffAxis: "Off-axis (6.0)",
+                presetTitle: "Educational Scenarios",
+                preset1: "1. Push In",
+                preset2: "2. Pull Out",
+                preset3: "3. Hold Stationary",
+                preset4: "4. Continuous Oscillation",
+                stepTitle: "How it works (Step-by-Step)",
+                step1Title: "1. Movement is Key",
+                step1Desc: "When the magnet is stationary, no electricity is generated, even if it is inside the coil. Induction requires <strong>relative motion</strong> between the magnet and the coil.",
+                step2Title: "2. Changing Magnetic Flux",
+                step2Desc: "As the magnet moves, the number of magnetic field lines passing through the area of the coil changes. This is called a change in magnetic flux (ΔΦ).",
+                step3Title: "3. Induced EMF",
+                step3Desc: "According to Faraday's Law, this changing magnetic flux induces an Electromotive Force (EMF) or voltage in the wire. Faster movement or more coil turns results in a higher voltage.",
+                step4Title: "4. The Negative Sign (Lenz's Law)",
+                step4Desc: "The negative sign in the formula represents <strong>Lenz's Law</strong>. It indicates that the induced EMF creates a current whose magnetic field <em>opposes</em> the change in magnetic flux that produced it.",
+                calcTitle: "Faraday's Law Formula",
+                calcDesc: "The magnitude of the induced EMF can be calculated using:",
+                varE: "Induced Voltage / EMF (Volts)",
+                varN: "Number of turns in the coil",
+                varPhi: "Change in magnetic flux (Webers)",
+                varT: "Time taken (Seconds)",
+                exTitle: "Interactive Practice:",
+                exProblem: "Adjust the values of N, ΔΦ, and Δt below to calculate the induced EMF (ε) in real-time:",
+                exProblemB: "Adjust Φ₁ and Φ₂ below to calculate ΔΦ and find the induced EMF (ε) in real-time:",
+                calcLabelN: "Number of turns (N):",
+                calcLabelPhi: "Flux change (ΔΦ) Wb:",
+                calcLabelPhi1: "Initial Flux (Φ₁):",
+                calcLabelPhi2: "Final Flux (Φ₂):",
+                calcLabelT: "Time interval (Δt) s:",
+                calcTabA: "1. Direct ΔΦ",
+                calcTabB: "2. Φ₁ & Φ₂ (3D)",
+                calcStep1: "Step 1: Find ΔΦ (Φ₂ - Φ₁)",
+                calcStep2: "Step 2: Find EMF (ε)",
+                state1Label: "State 1 (Φ₁)",
+                state2Label: "State 2 (Φ₂)",
+                viewReset: "Reset View",
+                viewTop: "Top View",
+                viewFront: "Front View",
+                graphTitle: "Induced Voltage vs. Time Graph",
+                graphRealtime: "Real-time",
+                fluxMonitorTitle: "Magnetic Flux (Φ)",
+                flux1: "Φ₁ (Initial Flux)",
+                flux2: "Φ₂ (Current Flux)",
+                fluxDelta: "ΔΦ (Change in Flux)",
+                fluxIncreasing: "Flux is increasing (+)",
+                fluxDecreasing: "Flux is decreasing (-)",
+                fluxStationary: "No change in flux (0)",
+                footerPowered: 'Powered by <a href="https://opensimlab.org" target="_blank" class="text-blue-600 hover:underline font-medium">opensimlab.org</a>',
+                footerCoded: "Coded by Gemini (AI)"
+            },
+            th: {
+                navTitle: "ฟิสิกส์อินเทอร์แอกทีฟ",
+                pageTitle: "การเหนี่ยวนำทางแม่เหล็กไฟฟ้า",
+                pageIntro: "เรียนรู้กระบวนการสร้างกระแสไฟฟ้าจากสนามแม่เหล็กที่เคลื่อนที่ ลองขยับแม่เหล็กผ่านขดลวดเพื่อสังเกตการเกิดแรงเคลื่อนไฟฟ้าตามกฎของฟาราเดย์",
+                simTitle: "แบบจำลอง 3 มิติ",
+                instruction3D: "💡 เคล็ดลับ: คลิกและลากเพื่อหมุนมุมมอง 3 มิติ เลื่อนลูกกลิ้งเมาส์เพื่อซูม",
+                voltmeterLabel: "แรงเคลื่อนไฟฟ้าเหนี่ยวนำ (EMF)",
+                ctrlMagnet: "ตำแหน่งของแท่งแม่เหล็ก",
+                posLeft: "ด้านนอก (ซ้าย)",
+                posCenter: "ในขดลวด",
+                posRight: "ด้านนอก (ขวา)",
+                ctrlTurns: "จำนวนรอบของขดลวด (N)",
+                ctrlSpeed: "ความเร็วการเคลื่อนที่",
+                ctrlOffset: "ระยะห่างจากแกนกลาง",
+                ctrlMaxPos: "ระยะขยับสูงสุด",
+                posOnAxis: "ตรงกลางแกน (0.0)",
+                posOffAxis: "ห่างจากแกน (6.0)",
+                presetTitle: "ตัวอย่างสถานการณ์เรียนรู้",
+                preset1: "1. ดันเข้า",
+                preset2: "2. ดึงออก",
+                preset3: "3. วางไว้นิ่งๆ",
+                preset4: "4. แกว่งต่อเนื่อง",
+                stepTitle: "ขั้นตอนการเกิดกระแสไฟฟ้า",
+                step1Title: "1. การเคลื่อนที่เป็นหัวใจสำคัญ",
+                step1Desc: "เมื่อแม่เหล็กหยุดนิ่ง จะไม่มีกระแสไฟฟ้าเกิดขึ้นเลยแม้แม่เหล็กจะอยู่ภายในขดลวดก็ตาม การเหนี่ยวนำจะเกิดขึ้นก็ต่อเมื่อมีการ <strong>เคลื่อนที่สัมพัทธ์</strong> ระหว่างแม่เหล็กกับขดลวดเท่านั้น",
+                step2Title: "2. การเปลี่ยนแปลงฟลักซ์แม่เหล็ก",
+                step2Desc: "เมื่อแม่เหล็กเคลื่อนที่ ปริมาณเส้นแรงแม่เหล็กที่พุ่งตัดผ่านพื้นที่หน้าตัดของขดลวดจะเกิดการเปลี่ยนแปลง เราเรียกสิ่งนี้ว่า การเปลี่ยนแปลงฟลักซ์แม่เหล็ก (ΔΦ)",
+                step3Title: "3. เกิดแรงเคลื่อนไฟฟ้า",
+                step3Desc: "ตามกฎของฟาราเดย์ การเปลี่ยนแปลงฟลักซ์แม่เหล็กนี้จะไปเหนี่ยวนำให้เกิดแรงเคลื่อนไฟฟ้า (EMF) หรือแรงดันไฟฟ้าในขดลวด ยิ่งขยับแม่เหล็กเร็วหรือจำนวนขดลวดมาก แรงดันไฟก็ยิ่งสูง",
+                step4Title: "4. เครื่องหมายลบ (กฎของเลนซ์)",
+                step4Desc: "เครื่องหมายลบในสมการแสดงถึง <strong>กฎของเลนซ์ (Lenz's Law)</strong> บ่งชี้ว่าแรงเคลื่อนไฟฟ้าเหนี่ยวนำจะสร้างกระแสไฟฟ้าในทิศทางที่สร้างสนามแม่เหล็กขึ้นมาเพื่อ <em>ต้าน</em> การเปลี่ยนแปลงของฟลักซ์แม่เหล็กที่มากระทำเสมอ",
+                calcTitle: "สมการกฎของฟาราเดย์",
+                calcDesc: "ขนาดของแรงเคลื่อนไฟฟ้าเหนี่ยวนำสามารถคำนวณได้จาก:",
+                varE: "แรงเคลื่อนไฟฟ้าเหนี่ยวนำ (โวลต์)",
+                varN: "จำนวนรอบของขดลวด",
+                varPhi: "การเปลี่ยนแปลงของฟลักซ์แม่เหล็ก (เวเบอร์)",
+                varT: "เวลาที่ใช้ (วินาที)",
+                exTitle: "ทดลองคำนวณด้วยตนเอง:",
+                exProblem: "ปรับเปลี่ยนค่า N, ΔΦ และ Δt ด้านล่างเพื่อฝึกคำนวณแรงเคลื่อนไฟฟ้าเหนี่ยวนำ (ε) แบบเรียลไทม์:",
+                exProblemB: "ปรับค่า Φ₁ และ Φ₂ ด้านล่างเพื่อหาผลต่างฟลักซ์ ΔΦ และแรงเคลื่อนไฟฟ้าเหนี่ยวนำ ε:",
+                calcLabelN: "จำนวนรอบขดลวด (N):",
+                calcLabelPhi: "ฟลักซ์เปลี่ยนแปลง (ΔΦ) Wb:",
+                calcLabelPhi1: "ฟลักซ์เริ่มต้น (Φ₁):",
+                calcLabelPhi2: "ฟลักซ์สุดท้าย (Φ₂):",
+                calcLabelT: "ช่วงเวลา (Δt) วินาที:",
+                calcTabA: "1. ใช้ ΔΦ โดยตรง",
+                calcTabB: "2. Φ₁ & Φ₂ (3D)",
+                calcStep1: "ขั้นที่ 1: หาผลต่างฟลักซ์ ΔΦ (Φ₂ - Φ₁)",
+                calcStep2: "ขั้นที่ 2: แทนค่าฟาราเดย์หาแรงดัน ε",
+                state1Label: "สถานะ 1 (Φ₁)",
+                state2Label: "สถานะ 2 (Φ₂)",
+                viewReset: "รีเซ็ตมุมมอง",
+                viewTop: "มุมมองด้านบน",
+                viewFront: "มุมมองด้านหน้า",
+                graphTitle: "กราฟแสดงแรงเคลื่อนไฟฟ้ากับเวลา",
+                graphRealtime: "เรียลไทม์",
+                fluxMonitorTitle: "ฟลักซ์แม่เหล็ก (Φ)",
+                flux1: "Φ₁ (ฟลักซ์เริ่มต้น)",
+                flux2: "Φ₂ (ฟลักซ์ปัจจุบัน)",
+                fluxDelta: "ΔΦ (ฟลักซ์ที่เปลี่ยนแปลง)",
+                fluxIncreasing: "ฟลักซ์เพิ่มขึ้น (+)",
+                fluxDecreasing: "ฟลักซ์ลดลง (-)",
+                fluxStationary: "ฟลักซ์คงที่ (0)",
+                footerPowered: 'สนับสนุนโดย <a href="https://opensimlab.org" target="_blank" class="text-blue-600 hover:underline font-medium">opensimlab.org</a>',
+                footerCoded: "เขียนโค้ดโดย Gemini (AI)"
+            }
+        };
+
+        let currentLang = 'en';
+
+        function toggleLanguage() {
+            const container = document.querySelector('.lang-switch-container');
+            currentLang = currentLang === 'en' ? 'th' : 'en';
+            container.setAttribute('data-active', currentLang);
+            updateUIText();
+            recalculateEMF(); // อัปเดตตัวแปรคำนวณให้เข้ากับภาษาใหม่
+        }
+
+        function updateUIText() {
+            const elements = document.querySelectorAll('[data-i18n]');
+            elements.forEach(el => {
+                const key = el.getAttribute('data-i18n');
+                if (translations[currentLang][key]) {
+                    el.innerHTML = translations[currentLang][key];
+                }
+            });
+        }
+        
+        function setView(type) {
+            if(!camera || !controls) return;
+            if(type === 'reset') {
+                camera.position.set(-15, 20, 25);
+            } else if (type === 'top') {
+                camera.position.set(0, 30, 0);
+            } else if (type === 'front') {
+                camera.position.set(0, 0, 30);
+            }
+            camera.lookAt(0, 0, 0);
+            controls.target.set(0, 0, 0);
+            controls.update(); // อัปเดตและหน่วงค่าสำหรับการแสดงผลของ OrbitControls
+        }
+
+        /**
+         * ฟังก์ชันหลักในการสลับหน้าแผงคำนวณแบบจำลอง Practice (Tab A / Tab B)
+         */
+        function switchPracticeTab(tab) {
+            const panelDirect = document.getElementById('practice-direct-panel');
+            const panelFlux = document.getElementById('practice-flux-panel');
+            const btnDirect = document.getElementById('tab-direct-btn');
+            const btnFlux = document.getElementById('tab-flux-btn');
+
+            if (tab === 'direct') {
+                panelDirect.classList.remove('hidden');
+                panelFlux.classList.add('hidden');
+                btnDirect.className = "flex-1 py-2 text-center border-b-2 border-blue-600 text-blue-600 transition";
+                btnFlux.className = "flex-1 py-2 text-center text-gray-500 hover:text-blue-600 transition";
+            } else {
+                panelDirect.classList.add('hidden');
+                panelFlux.classList.remove('hidden');
+                btnFlux.className = "flex-1 py-2 text-center border-b-2 border-blue-600 text-blue-600 transition";
+                btnDirect.className = "flex-1 py-2 text-center text-gray-500 hover:text-blue-600 transition";
+                
+                // [NEW] บังคับให้ WebGL ย่อยปรับขนาดให้เหมาะสมกับแผง Layout ป้องกันบิดเบี้ยว
+                if (practiceRenderer && practiceCamera) {
+                    const container = document.getElementById('flux-3d-container');
+                    practiceRenderer.setSize(container.clientWidth, container.clientHeight);
+                    practiceCamera.aspect = container.clientWidth / container.clientHeight;
+                    practiceCamera.updateProjectionMatrix();
+                }
+                recalculateEMF();
+            }
+        }
+
+        // ==========================================
+        // PART 2: ระบบเรนเดอร์ภาพ 3 มิติ และวัตถุเชิงเรขาคณิต (Three.js WebGL Engine)
+        // ==========================================
+        let scene, camera, renderer, coilGroup, magnetGroup, controls;
+        const canvasContainer = document.getElementById('canvas-container');
+        
+        // ตัวแปรควบคุมพารามิเตอร์การขยับของแม่เหล็ก (y = ระยะเบี่ยงแกนกลาง, z = ระยะเลื่อนซ้ายขวา)
+        let magnetParams = { z: -15, prevZ: -15, y: 0 };
+        let coilTurns = 5;
+        let currentMode = 'manual';
+        let presetTimer = 0;
+        let lastTime = 0;
+        let currentInducedVoltage = 0;
+        let currentParticles = []; // ตัวแปรเก็บอนุภาคกระแสไฟฟ้า
+        let presetSpeed = 1.0;
+        let maxPosLimit = 15.0; // ขีดจำกัดระยะทางสูงสุด
+
+        // [NEW] ตัวแปรควบคุมและเอนจินของ Practice 3D (Tab 2)
+        let practiceScene, practiceCamera, practiceRenderer;
+        let practiceMagnet1, practiceMagnet2;
+        let practiceFieldLines1 = [], practiceFieldLines2 = [];
+
+        // สัมประสิทธิ์ฟิลด์สนามแม่เหล็ก (Gaussian Field Constant) สำหรับสร้างกราฟความหนาแน่นเชิงฟิสิกส์
+        const kField = 0.035; 
+        const phiMaxVal = 0.50; // ค่าฟลักซ์แม่เหล็กสูงสุด ณ กึ่งกลาง
+
+        // ตัวแปรการคำนวณและเก็บค่าการเปลี่ยนแปลงฟลักซ์เพื่อคำนวณหาค่าความชัน Delta Phi
+        let lastSampleTime = 0;
+        let phi1 = 0;
+        let phi2 = 0;
+        let deltaPhi = 0;
+
+        // ดึงอิลิเมนต์สำหรับควบคุมค่าควบคุมสไลเดอร์และแสดงตัวเลขบน UI
+        const sliderMagnet = document.getElementById('magnet-slider');
+        const sliderTurns = document.getElementById('turns-slider');
+        const textTurns = document.getElementById('turns-val');
+        const sliderSpeed = document.getElementById('speed-slider');
+        const textSpeed = document.getElementById('speed-val');
+        const sliderOffset = document.getElementById('offset-slider');
+        const textOffset = document.getElementById('offset-val');
+        const sliderMaxPos = document.getElementById('max-pos-slider');
+        const textMaxPos = document.getElementById('max-pos-val');
+        const elVoltage = document.getElementById('voltage-value');
+        const meterFill = document.getElementById('meter-fill');
+
+        // ดึงอิลิเมนต์สำหรับคำนวณบล็อกคณิตศาสตร์แชร์ตรง Practice Tab 1
+        const inputCalcN = document.getElementById('calc-n');
+        const inputCalcPhi = document.getElementById('calc-phi');
+        const inputCalcT = document.getElementById('calc-t');
+        const displayN = document.getElementById('display-n');
+        const displayPhi = document.getElementById('display-phi');
+        const displayT = document.getElementById('display-t');
+        const displayResult = document.getElementById('display-result');
+
+        // ดึงอิลิเมนต์สำหรับคำนวณบล็อกคณิตศาสตร์แชร์ตรง Practice Tab 2
+        const inputCalcBN = document.getElementById('calc-b-n');
+        const inputCalcPhi1 = document.getElementById('calc-phi1');
+        const inputCalcPhi2 = document.getElementById('calc-phi2');
+        const inputCalcBT = document.getElementById('calc-b-t');
+        
+        const displayBPhi2 = document.getElementById('display-b-phi2');
+        const displayBPhi1 = document.getElementById('display-b-phi1');
+        const displayBDeltaphi = document.getElementById('display-b-deltaphi');
+        
+        const displayBN = document.getElementById('display-b-n');
+        const displayBNumPhi = document.getElementById('display-b-num-phi');
+        const displayBNumT = document.getElementById('display-b-num-t');
+        const displayBResult = document.getElementById('display-b-result');
+
+        // ดึงอิลิเมนต์แสดงผลค่าฟลักซ์แม่เหล็กบนวิดเจ็ต Flux Monitor
+        const elPhi1 = document.getElementById('phi1-val');
+        const elPhi2 = document.getElementById('phi2-val');
+        const elDeltaPhi = document.getElementById('deltaphi-val');
+        const elFluxTrendIcon = document.getElementById('flux-trend-icon');
+        const elFluxTrendText = document.getElementById('flux-trend-text');
+
+        // magnet slider setup
+        sliderMagnet.min = -maxPosLimit;
+        sliderMagnet.max = maxPosLimit;
+        sliderMagnet.value = magnetParams.z;
+
+        // อิลิเมนต์สำหรับสร้างกราฟ 2D ด้วย HTML5 Canvas 
+        const graphCanvas = document.getElementById('graph-canvas');
+        const graphCtx = graphCanvas.getContext('2d');
+        let voltageHistory = [];
+        const maxHistoryPoints = 250; // ขนาดอาร์เรย์เก็บข้อมูลความต่างศักย์สำหรับลากเส้นในกราฟ
+
+        /**
+         * ฟังก์ชันเปลี่ยนผ่านโหมดจำลองตามชุดตัวอย่างแบบเรียนมัธยม (Preset educational setups)
+         * @param {string} mode - โหมดที่เลือก ('p1', 'p2', 'p3', 'p4', 'manual')
+         */
+        function setPreset(mode) {
+            currentMode = mode;
+            presetTimer = 0;
+            lastTime = performance.now();
+            
+            // ปรับแต่งการเลือกสถานะการกดของกลุ่มปุ่ม Scenario
+            document.querySelectorAll('.preset-btn').forEach(btn => {
+                btn.classList.remove('bg-blue-600', 'text-white');
+                btn.classList.add('bg-white', 'text-blue-600');
+            });
+            
+            if (mode !== 'manual') {
+                const activeBtn = document.getElementById('btn-preset-' + mode);
+                activeBtn.classList.remove('bg-white', 'text-blue-600');
+                activeBtn.classList.add('bg-blue-600', 'text-white');
+            }
+
+            // ตั้งค่าตำแหน่งเริ่มต้นให้ถูกต้องเพื่อหลีกเลี่ยงกระโดดความเร็วสูงสุด (EMF Spike) ตอนเริ่ม
+            if (mode === 'p1') { 
+                magnetParams.z = -maxPosLimit;
+            } else if (mode === 'p2') { 
+                magnetParams.z = 0;
+            } else if (mode === 'p3') { 
+                magnetParams.z = 0;
+            }
+            
+            magnetParams.prevZ = magnetParams.z; // รีเซ็ตตำแหน่งเฟรมก่อนหน้าให้เท่ากัน
+            sliderMagnet.value = magnetParams.z;
+        }
+
+        /**
+         * ฟังก์ชันเริ่มต้นสำหรับการตั้งค่า WebGL เอนจินจำลอง 3 มิติ (WebGL Scene Setup)
+         */
+        function init3D() {
+            scene = new THREE.Scene();
+            scene.background = null; // ปล่อยโปร่งแสงเพื่อแสดงผลไล่ระดับสีพื้นหลัง (Gradient CSS) ด้านหลัง
+            
+            camera = new THREE.PerspectiveCamera(45, canvasContainer.clientWidth / canvasContainer.clientHeight, 0.1, 1000);
+            camera.position.set(-15, 20, 25); 
+            camera.lookAt(0, 0, 0);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(canvasContainer.clientWidth, canvasContainer.clientHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            canvasContainer.appendChild(renderer.domElement);
+
+            // ตั้งค่าระบบควบคุมกล้อง OrbitControls สำหรับผู้ใช้งานหมุน/ซูม
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true; // เปิดใช้งานระบบหน่วงความเร็วหมุนเพื่อความสมูท
+            controls.dampingFactor = 0.05;
+            controls.minDistance = 10;
+            controls.maxDistance = 50;
+
+            // ตั้งค่าแสงสว่างในระบบ (Scene Lights Setup)
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6); // แสงสภาพแวดล้อมโดยรอบ
+            scene.add(ambientLight);
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.8); // แสงหลักแสดงรายละเอียดเงาและทิศทาง
+            dirLight.position.set(10, 20, 10);
+            scene.add(dirLight);
+            const backLight = new THREE.DirectionalLight(0xffffff, 0.3); // แสงหลังเสริมมิติเชิงวัตถุ
+            backLight.position.set(-10, -20, -10);
+            scene.add(backLight);
+
+            // สร้างขดลวดตัวนำและแม่เหล็กแม่เหล็ก 3D
+            coilGroup = new THREE.Group();
+            scene.add(coilGroup);
+            buildCoil(coilTurns);
+            buildMagnet();
+
+            // ตารางอ้างอิงระดับระนาบพื้นล่าง (Grid Floor Helper)
+            const gridHelper = new THREE.GridHelper(40, 20, 0x475569, 0x1e293b);
+            gridHelper.position.y = -6;
+            scene.add(gridHelper);
+
+            // ตั้งค่าขอบเขตการทำงานของสไลเดอร์เริ่มต้น
+            sliderTurns.min = 1;
+            sliderTurns.max = 100;
+            sliderTurns.value = coilTurns;
+            textTurns.innerText = coilTurns;
+
+            sliderMagnet.min = -maxPosLimit;
+            sliderMagnet.max = maxPosLimit;
+            sliderMagnet.value = magnetParams.z;
+
+            // [NEW] สั่งรันเตรียมชุดเอนจินย่อย 3D สำหรับ Tab 2 Practice
+            initPractice3D();
+
+            window.addEventListener('resize', onWindowResize);
+            animate();
+        }
+
+        /**
+         * ฟังก์ชันสร้างโมเดล "ขดลวดสปริง" เส้นเดียว (Helix Single Wire Spring Geometry)
+         * @param {number} turns - จำนวนรอบการพันขดลวดตัวนำ (N)
+         */
+        function buildCoil(turns) {
+            // ล้างอ็อบเจกต์ขดลวดเก่าทั้งหมดก่อนสร้างใหม่
+            while(coilGroup.children.length > 0){ 
+                coilGroup.remove(coilGroup.children[0]); 
+            }
+            currentParticles = []; // รีเซ็ตกลุ่มประจุไฟฟ้าในสายไฟ
+
+            // สีกึ่งสว่างของทองแดงเคลือบแว็กซ์ที่เห็นได้เด่นชัดในฉากหลังสีทึบ
+            const copperMaterial = new THREE.MeshStandardMaterial({ 
+                color: 0xffa550, metalness: 0.6, roughness: 0.3 
+            });
+            
+            // ขนาดเส้นผ่าศูนย์กลางประจุเหลืองใหญ่ขึ้นเพื่อไม่ให้จมอยู่ใต้แกนสปริง
+            const particleGeo = new THREE.SphereGeometry(0.35, 16, 16);
+            const particleMat = new THREE.MeshBasicMaterial({ color: 0xffff00 }); // สีเหลืองเรืองแสงสำหรับอิเล็กตรอน
+
+            // กำหนดพารามิเตอร์โครงสร้างเชิงฟิสิกส์ของเกลียวทองแดง
+            const radius = 3.5;
+            const wireThickness = 0.15;
+            const totalCoilLength = 10; // ความยาวคงที่ในการวางขดสปริง
+            const startZ = -totalCoilLength / 2;
+            
+            // สร้างเส้นทาง Helix Curve เชิงพาราเมตริกสามมิติสำหรับประจุวิ่งและทำท่อทองแดง
+            class HelixCurve extends THREE.Curve {
+                constructor(scale = 1) {
+                    super();
+                    this.scale = scale;
+                }
+                getPoint(t, optionalTarget = new THREE.Vector3()) {
+                    const angle = t * Math.PI * 2 * turns;
+                    const z = startZ + (t * totalCoilLength);
+                    const x = Math.cos(angle) * radius;
+                    const y = Math.sin(angle) * radius;
+                    return optionalTarget.set(x, y, z).multiplyScalar(this.scale);
+                }
+            }
+
+            const path = new HelixCurve();
+            // กำหนดเซ็กเมนต์ท่อให้ละเอียดยิ่งขึ้นหากขดลวดเยอะขึ้นป้องกันขดลวดเหลี่ยม
+            const tubularSegments = Math.max(100, turns * 20); 
+            const tubeGeometry = new THREE.TubeGeometry(path, tubularSegments, wireThickness, 8, false);
+            const tubeMesh = new THREE.Mesh(tubeGeometry, copperMaterial);
+            coilGroup.add(tubeMesh);
+            
+            // Add current visualization particles along the wire
+            const numParticles = Math.min(turns * 2, 40); 
+            for(let j=0; j<numParticles; j++) {
+                const particle = new THREE.Mesh(particleGeo, particleMat);
+                const initialT = j / numParticles; 
+                const pt = path.getPoint(initialT);
+                particle.position.copy(pt);
+                particle.visible = false; // จะแสดงผลเมื่อเกิดแรงเคลื่อนไฟฟ้าเหนี่ยวนำ
+                coilGroup.add(particle);
+                currentParticles.push({ mesh: particle, t: initialT, path: path });
+            }
+        }
+
+        /**
+         * ฟังก์ชันสร้างแท่งแม่เหล็ก 3 มิติพร้อมลวดลายระบุขั้วเหนือ-ใต้ (Magnetic Bar with N/S Texture)
+         */
+        function buildMagnet() {
+            magnetGroup = new THREE.Group();
+            const width = 1.5, height = 1.5, length = 8;
+            
+            // สร้างพื้นผิวแคนวาส 2 มิติเพื่อวาดอักษรขั้วระบุตำแหน่ง N-S บนแกน
+            function createTextTexture(text, bgColor) {
+                const canvas = document.createElement('canvas');
+                canvas.width = 256;
+                canvas.height = 256;
+                const context = canvas.getContext('2d');
+                context.fillStyle = bgColor;
+                context.fillRect(0, 0, 256, 256);
+                context.font = 'Bold 160px Inter, Arial, sans-serif';
+                context.fillStyle = 'white';
+                context.textAlign = 'center';
+                context.textBaseline = 'middle';
+                context.fillText(text, 128, 138); 
+                const texture = new THREE.CanvasTexture(canvas);
+                return texture;
+            }
+
+            const texNorth = createTextTexture('N', '#e63946'); // ขั้วเหนือสีแดงแรงสูง
+            const texSouth = createTextTexture('S', '#1d3557'); // ขั้วใต้สีน้ำน้ำเงินเข้มขรึม
+            
+            // การจับคู่พื้นผิวกับเหลี่ยมบ็อกซ์แม่เหล็ก
+            const matNorthSides = new THREE.MeshStandardMaterial({ color: 0xe63946, metalness: 0.3, roughness: 0.4 });
+            const matNorthLabel = new THREE.MeshStandardMaterial({ map: texNorth, metalness: 0.3, roughness: 0.4 });
+            const materialsNorth = [matNorthLabel, matNorthLabel, matNorthLabel, matNorthSides, matNorthSides, matNorthSides];
+
+            const matSouthSides = new THREE.MeshStandardMaterial({ color: 0x1d3557, metalness: 0.3, roughness: 0.4 });
+            const matSouthLabel = new THREE.MeshStandardMaterial({ map: texSouth, metalness: 0.3, roughness: 0.4 });
+            const materialsSouth = [matSouthLabel, matSouthLabel, matSouthLabel, matSouthSides, matSouthSides, matSouthSides];
+            
+            // โมเดลขั้วเหนือสีแดงอยู่ฝั่งบวก (+Z)
+            const geoNorth = new THREE.BoxGeometry(width, height, length/2);
+            const meshNorth = new THREE.Mesh(geoNorth, materialsNorth);
+            meshNorth.position.z = length/4;
+            
+            // โมเดลขั้วใต้สีน้ำเงินอยู่ฝั่งลบ (-Z)
+            const geoSouth = new THREE.BoxGeometry(width, height, length/2);
+            const meshSouth = new THREE.Mesh(geoSouth, materialsSouth);
+            meshSouth.position.z = -length/4;
+
+            magnetGroup.add(meshNorth);
+            magnetGroup.add(meshSouth);
+            
+            // วาดและจำลองทิศเส้นแรงแม่เหล็ก (Magnetic Field Lines) ทะลุเข้าออกตามฟิสิกส์จริง
+            buildMagneticFieldLines(magnetGroup, length);
+
+            magnetGroup.position.z = magnetParams.z;
+            magnetGroup.position.y = magnetParams.y;
+            scene.add(magnetGroup);
+        }
+
+        /**
+         * ฟังก์ชันสร้างและวาดเส้นแรงสนามแม่เหล็กโค้งออกรอบๆ ทิศแท่งแม่เหล็ก (B-Field Lines Generation)
+         */
+        function buildMagneticFieldLines(parent, magnetLength) {
+            const numLines = 8; // จำนวนซีกเส้นแรงแม่เหล็กโค้ง
+            const lineMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.25 });
+            const arrowMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5 });
+            
+            const zStart = magnetLength / 2 - 0.5; // จุดพุ่งเริ่มต้นใกล้ขั้วเหนือ
+            const zEnd = -magnetLength / 2 + 0.5; // จุดเข้าสู่ขั้วใต้
+            const rOffset = 0.8; 
+
+            for(let i=0; i<numLines; i++) {
+                const angle = (i / numLines) * Math.PI * 2;
+                const bowRadius = 6; // ระยะกว้างระเบิดขอบเขตความโค้งออกด้านข้าง
+                
+                const startPt = new THREE.Vector3(Math.cos(angle)*rOffset, Math.sin(angle)*rOffset, zStart);
+                const endPt = new THREE.Vector3(Math.cos(angle)*rOffset, Math.sin(angle)*rOffset, zEnd);
+                
+                // กำหนดจุดอ้างอิงส่วนเว้าเบซิเยร์เชิงสามมิติให้สมบูรณ์
+                const mid1 = new THREE.Vector3(Math.cos(angle)*bowRadius, Math.sin(angle)*bowRadius, zStart * 1.2);
+                const mid2 = new THREE.Vector3(Math.cos(angle)*bowRadius, Math.sin(angle)*bowRadius, zEnd * 1.2);
+                
+                const curve = new THREE.CubicBezierCurve3(startPt, mid1, mid2, endPt);
+                const points = curve.getPoints(40);
+                const geometry = new THREE.BufferGeometry().setFromPoints(points);
+                const line = new THREE.Line(geometry, lineMat);
+                parent.add(line);
+                
+                const midPoint = curve.getPoint(0.5);
+                const tangent = curve.getTangent(0.5).normalize();
+                
+                const arrowGeo = new THREE.ConeGeometry(0.3, 1, 8);
+                const arrow = new THREE.Mesh(arrowGeo, arrowMat);
+                arrow.position.copy(midPoint);
+                
+                const target = midPoint.clone().add(tangent);
+                arrow.lookAt(target);
+                arrow.rotateX(Math.PI / 2); // ปรับหงายหัวกรวยตามทิศทางความโค้ง tangent
+                
+                parent.add(arrow);
+            }
+        }
+
+        // ปรับแต่งและขยายขนาด 3D เอนจินเมื่อผู้ใช้งานย่อหรือขยายหน้าต่างเบราว์เซอร์
+        function onWindowResize() {
+            if(camera && renderer) {
+                camera.aspect = canvasContainer.clientWidth / canvasContainer.clientHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(canvasContainer.clientWidth, canvasContainer.clientHeight);
+            }
+            if(practiceCamera && practiceRenderer) {
+                const container = document.getElementById('flux-3d-container');
+                practiceCamera.aspect = container.clientWidth / container.clientHeight;
+                practiceCamera.updateProjectionMatrix();
+                practiceRenderer.setSize(container.clientWidth, container.clientHeight);
+            }
+        }
+
+        // ==========================================
+        // [NEW] PART 2.5: โครงสร้างเอนจินย่อย WebGL 3D สำหรับแผงฝึกคำนวณ Tab 2
+        // ==========================================
+        /**
+         * ฟังก์ชันเริ่มจัดตั้งระบบ WebGL 3D ย่อย สำหรับ Tab 2
+         */
+        function initPractice3D() {
+            const container = document.getElementById('flux-3d-container');
+            if (!container) return;
+
+            practiceScene = new THREE.Scene();
+            practiceScene.background = null; // ปล่อยโปร่งเพื่อให้เห็นสีกราวด์เข้มของบอร์ดสแลท
+
+            // ใช้เลนส์ Perspective Tilted Isometric View
+            practiceCamera = new THREE.PerspectiveCamera(30, container.clientWidth / container.clientHeight, 0.1, 100);
+            practiceCamera.position.set(0, 6, 18);
+            practiceCamera.lookAt(0, -0.5, 0);
+
+            practiceRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            practiceRenderer.setSize(container.clientWidth, container.clientHeight);
+            practiceRenderer.setPixelRatio(window.devicePixelRatio);
+            container.appendChild(practiceRenderer.domElement);
+
+            // ไฟตกแต่งส่วนของภาพย่อย
+            const ambLight = new THREE.AmbientLight(0xffffff, 0.6);
+            practiceScene.add(ambLight);
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            dirLight.position.set(5, 10, 5);
+            practiceScene.add(dirLight);
+
+            // ขดลวด 2 วง (Left Center: -4.5, Right Center: 4.5)
+            const coilGeo = new THREE.TorusGeometry(1.2, 0.08, 8, 48);
+            const copperMat = new THREE.MeshStandardMaterial({ color: 0xffa550, metalness: 0.7, roughness: 0.2 });
+
+            const coil1 = new THREE.Mesh(coilGeo, copperMat);
+            coil1.position.set(-4.5, 0, 0);
+            coil1.rotateY(Math.PI / 2); // หมุนหน้าห่วงให้เผชิญตามแนวระดับการวิ่ง X
+            practiceScene.add(coil1);
+
+            const coil2 = new THREE.Mesh(coilGeo, copperMat);
+            coil2.position.set(4.5, 0, 0);
+            coil2.rotateY(Math.PI / 2);
+            practiceScene.add(coil2);
+
+            // บล็อกแม่เหล็กมินิ 2 ชุด (North-Red / South-Blue)
+            const w = 0.5, h = 0.5, len = 2.4;
+            const geoNorth = new THREE.BoxGeometry(len/2, h, w);
+            const matNorth = new THREE.MeshStandardMaterial({ color: 0xe63946, metalness: 0.3, roughness: 0.4 });
+            const geoSouth = new THREE.BoxGeometry(len/2, h, w);
+            const matSouth = new THREE.MeshStandardMaterial({ color: 0x1d3557, metalness: 0.3, roughness: 0.4 });
+
+            // ประกอบชิ้นซีกเหนือใต้สำหรับแท่ง 1 (State 1)
+            practiceMagnet1 = new THREE.Group();
+            const m1N = new THREE.Mesh(geoNorth, matNorth); m1N.position.x = len/4;
+            const m1S = new THREE.Mesh(geoSouth, matSouth); m1S.position.x = -len/4;
+            practiceMagnet1.add(m1N, m1S);
+            practiceScene.add(practiceMagnet1);
+
+            // ประกอบชิ้นซีกเหนือใต้สำหรับแท่ง 2 (State 2)
+            practiceMagnet2 = new THREE.Group();
+            const m2N = new THREE.Mesh(geoNorth, matNorth); m2N.position.x = len/4;
+            const m2S = new THREE.Mesh(geoSouth, matSouth); m2S.position.x = -len/4;
+            practiceMagnet2.add(m2N, m2S);
+            practiceScene.add(practiceMagnet2);
+
+            // วาดและลงทะเบียนเส้นแรงแม่เหล็กโค้งมินิสำหรับปรับความโปร่งตามค่าฟลักซ์
+            buildMiniFieldLines(practiceMagnet1, len, practiceFieldLines1);
+            buildMiniFieldLines(practiceMagnet2, len, practiceFieldLines2);
+        }
+
+        /**
+         * ฟังก์ชันช่วยสร้างเส้นสนามแม่เหล็กมินิโอบล้อมรอบตัวบาร์แบบไดนามิก
+         */
+        function buildMiniFieldLines(magnetGroup, len, lineArray) {
+            const numLines = 6;
+            const rOffset = 0.25;
+            const xStart = len / 2;
+            const xEnd = -len / 2;
+
+            for (let i = 0; i < numLines; i++) {
+                const angle = (i / numLines) * Math.PI * 2;
+                const bowRadius = 2.0; // ขอบเขตความโค้งพองออก
+
+                const startPt = new THREE.Vector3(xStart, Math.sin(angle)*rOffset, Math.cos(angle)*rOffset);
+                const endPt = new THREE.Vector3(xEnd, Math.sin(angle)*rOffset, Math.cos(angle)*rOffset);
+
+                const mid1 = new THREE.Vector3(xStart * 0.5, Math.sin(angle)*bowRadius, Math.cos(angle)*bowRadius);
+                const mid2 = new THREE.Vector3(xEnd * 0.5, Math.sin(angle)*bowRadius, Math.cos(angle)*bowRadius);
+
+                const curve = new THREE.CubicBezierCurve3(startPt, mid1, mid2, endPt);
+                const points = curve.getPoints(20);
+                const geometry = new THREE.BufferGeometry().setFromPoints(points);
+                const lineMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.3 });
+                const line = new THREE.Line(geometry, lineMat);
+                
+                magnetGroup.add(line);
+                lineArray.push(line);
+            }
+        }
+
+        // ==========================================
+        // PART 3: ระบบคำนวณแบบจำลองฟิสิกส์ตามเวลาจริง (Faraday & Lenz's Law Physics Engine)
+        // ==========================================
+        /**
+         * ฟังก์ชันหลักคำนวณพลังงานไฟฟ้าและการเปลี่ยนแปลงฟลักซ์แม่เหล็กอ้างอิงวินาที
+         * @param {number} time - แสตมป์เวลาการจำลองปัจจุบัน
+         * @param {number} delta - ส่วนต่างเวลาระหว่างเฟรม (dt) ในหน่วยมิลลิวินาที
+         */
+        function updatePhysics(time, delta) {
+            // ปรับส่วนต่างเวลามิลลิวินาทีเป็นวินาทีจริง (dt) เพื่อป้องกันความเพี้ยนเฟรมเรตบนหน้าจอความถี่สูง
+            let dt = delta / 1000;
+            if (dt <= 0 || dt > 0.1) dt = 0.0166; // กำหนดค่าเฉลี่ยเริ่มต้นประมาณ 60 FPS หากมีการพับแท็บจอลง
+
+            // คำนวณความเร็วเชิงกายภาพที่แม่นยำ v = dz/dt (หน่วย: ยูนิตจำลองต่อวินาที)
+            let physicalVelocity = (magnetParams.z - magnetParams.prevZ) / dt;
+            magnetParams.prevZ = magnetParams.z;
+
+            if(magnetGroup) {
+                magnetGroup.position.z = magnetParams.z;
+                magnetGroup.position.y = magnetParams.y; // Apply radial offset dynamically
+            }
+
+            const z = magnetParams.z;
+            const y = magnetParams.y;
+            const n = coilTurns;
+            
+            // 1. คำนวณฟลักซ์แม่เหล็กแบบเรียลไทม์ Phi(z, y) ด้วยการกระจายตัวของเกาส์ (Gaussian Bell Curve)
+            // ฟลักซ์แม่เหล็กจะสลายตัวในแนวรัศมีเมื่อห่างจากแกนกลาง (y): radialDecay = exp(-0.08 * y^2)
+            const radialDecay = Math.exp(-0.08 * y * y);
+            const currentFlux = phiMaxVal * Math.exp(-kField * z * z) * radialDecay;
+
+            // 2. คำนวณแรงเคลื่อนไฟฟ้าตามอนุพันธ์เชิงวิเคราะห์ของกฎฟาราเดย์:
+            // EMF = -N * (dPhi/dt) = -N * (dPhi/dz) * (dz/dt)
+            // dPhi/dz = -2 * kField * z * Phi(z)
+            // เมื่อแทนค่าจะได้สูตรสรุป: EMF = 2 * kField * N * Phi(z, y) * z * v
+            const voltageCalibration = 1.5; // ค่าคงที่สเกลเสริมเพื่อการแสดงผลบนหน้ามิเตอร์สวยงามยิ่งขึ้น
+            let inducedVoltage = 2 * kField * n * currentFlux * z * physicalVelocity * voltageCalibration;
+
+            // ปล่อยกระแสให้เป็น 0 หากแม่เหล็กเคลื่อนที่ช้าเกินไป ป้องกันปัญหาสายเมาส์ขยับสั่นเบา ๆ
+            if(Math.abs(physicalVelocity) < 0.1) inducedVoltage = 0;
+            
+            currentInducedVoltage = inducedVoltage; 
+            updateVoltmeter(inducedVoltage);
+
+            // 3. ปล่อยอัปเดตแผง Flux Monitor บนหน้าต่าง UI ทุก ๆ 150 มิลลิวินาที ป้องกันค่าตัวเลขวิ่งเร็วจนอ่านไม่ออก
+            if (time - lastSampleTime > 150) { 
+                if (Math.abs(physicalVelocity) > 0.1) {
+                    phi1 = phi2;
+                    phi2 = currentFlux;
+                } else {
+                    phi1 = currentFlux;
+                    phi2 = currentFlux;
+                }
+                deltaPhi = phi2 - phi1;
+                lastSampleTime = time;
+
+                // เขียนค่าตัวแปรลงวิดเจ็ตแสดงผลบนจอภาพ
+                elPhi1.innerText = phi1.toFixed(3) + ' Wb';
+                elPhi2.innerText = phi2.toFixed(3) + ' Wb';
+                
+                const sign = deltaPhi >= 0 ? '+' : '';
+                elDeltaPhi.innerText = sign + deltaPhi.toFixed(3) + ' Wb';
+
+                // ปรับแต่งสีและทิศทางการเปลี่ยนแปลงบนจอภาพแบบเรียลไทม์
+                if (deltaPhi > 0.001) {
+                    elDeltaPhi.className = "font-bold text-emerald-400";
+                    elFluxTrendIcon.innerText = "📈";
+                    elFluxTrendText.setAttribute('data-i18n', 'fluxIncreasing');
+                    elFluxTrendText.innerText = translations[currentLang]['fluxIncreasing'];
+                } else if (deltaPhi < -0.001) {
+                    elDeltaPhi.className = "font-bold text-rose-400";
+                    elFluxTrendIcon.innerText = "📉";
+                    elFluxTrendText.setAttribute('data-i18n', 'fluxDecreasing');
+                    elFluxTrendText.innerText = translations[currentLang]['fluxDecreasing'];
+                } else {
+                    elDeltaPhi.className = "font-bold text-slate-400";
+                    elFluxTrendIcon.innerText = "🛑";
+                    elFluxTrendText.setAttribute('data-i18n', 'fluxStationary');
+                    elFluxTrendText.innerText = translations[currentLang]['fluxStationary'];
+                }
+            }
+        }
+
+        /**
+         * ฟังก์ชันส่งกระแสแรงดันไปแสดงแถบหน้าปัดเข็มแรงเคลื่อนไฟฟ้าเหนี่ยวนำ (EMF Progress Gauge)
+         * @param {number} voltage - ความต่างศักย์ของประจุในหน่วยโวลต์
+         */
+        function updateVoltmeter(voltage) {
+            elVoltage.innerText = voltage.toFixed(1);
+            
+            // คุมสีให้แสดงทิศทาง: แรงดันไฟฟ้าบวกเป็นสีเขียวมรกต แรงดันไฟฟ้าลบเป็นสีแดงส้มระวังภัย
+            if (voltage > 0) {
+                elVoltage.style.color = '#10b981'; 
+                meterFill.style.backgroundColor = '#10b981';
+            } else if (voltage < 0) {
+                elVoltage.style.color = '#ef4444'; 
+                meterFill.style.backgroundColor = '#ef4444';
+            } else {
+                elVoltage.style.color = '#1e293b'; 
+            }
+
+            // ขีดจำกัดขอบเขตการส่ายของเข็มโวลต์มิเตอร์
+            const maxRange = 30; 
+            let normalizedV = Math.max(-maxRange, Math.min(maxRange, voltage));
+            
+            if (normalizedV > 0) {
+                const widthPercent = (normalizedV / maxRange) * 50;
+                meterFill.style.left = '50%';
+                meterFill.style.width = `${widthPercent}%`;
+            } else if (normalizedV < 0) {
+                const widthPercent = (Math.abs(normalizedV) / maxRange) * 50;
+                meterFill.style.left = `${50 - widthPercent}%`;
+                meterFill.style.width = `${widthPercent}%`;
+            } else {
+                meterFill.style.width = '0%';
+                meterFill.style.left = '50%';
+            }
+        }
+
+        // =========================================================================
+        // PART 4: ระบบประมวลผลวาดกราฟเส้น 2 มิติ (HTML5 Canvas 2D Graph Engine)
+        // ==========================================
+        /**
+         * ฟังก์ชันหลักในการวาดกราฟสตรีมมิ่งแสดงค่าความต่างศักย์กับแกนเวลาบนแคนวาส
+         * @param {number} voltage - แรงดันไฟฟ้าเหนี่ยวนำเหนี่ยวนำในเฟรมปัจจุบัน
+         */
+        function updateGraph(voltage) {
+            voltageHistory.push(voltage);
+            if (voltageHistory.length > maxHistoryPoints) {
+                voltageHistory.shift(); // คุมขนาดสตรีมมิ่งไม่ให้เปลืองหน่วยความจำ
+            }
+
+            const width = graphCanvas.clientWidth;
+            const height = graphCanvas.clientHeight;
+            
+            // ขยายปรับขนาดความละเอียดพิกเซลบนแคนวาสให้คมชัดตลอดเวลา
+            if (graphCanvas.width !== width || graphCanvas.height !== height) {
+                graphCanvas.width = width;
+                graphCanvas.height = height;
+            }
+
+            graphCtx.clearRect(0, 0, width, height);
+
+            // 1. เริ่มวาดเส้นตารางระเบียบฟิสิกส์ (Grid Lines Setup)
+            graphCtx.strokeStyle = 'rgba(71, 85, 105, 0.15)'; 
+            graphCtx.lineWidth = 1;
+
+            const centerY = height / 2;
+            
+            // วาดจุดกึ่งกลางอ้างอิงแรงดันไฟฟ้าเป็น 0 โวลต์
+            graphCtx.beginPath();
+            graphCtx.moveTo(0, centerY);
+            graphCtx.lineTo(width, centerY);
+            graphCtx.stroke();
+
+            // วาดเส้นประเปรียบเทียบระดับความต้านทานแรงดันไฟฟ้าด้านบนและล่าง (+15V, -15V)
+            const gridLines = [0.25, 0.75];
+            gridLines.forEach(ratio => {
+                graphCtx.beginPath();
+                graphCtx.setLineDash([5, 5]); 
+                graphCtx.moveTo(0, height * ratio);
+                graphCtx.lineTo(width, height * ratio);
+                graphCtx.stroke();
+                graphCtx.setLineDash([]); 
+            });
+
+            if (voltageHistory.length < 2) return;
+
+            // 2. เริ่มลากเส้นกราฟความต่างศักย์ (Voltage Path Rendering)
+            graphCtx.beginPath();
+            graphCtx.lineWidth = 2.5;
+            
+            const maxVal = 40; // ขีดจำกัดสเกลสูงสุดสำหรับการพล๊อตกราฟแนวตั้ง
+            const getX = (index) => (index / (maxHistoryPoints - 1)) * width;
+            const getY = (val) => centerY - (val / maxVal) * (height / 2) * 0.95;
+
+            // ไล่โทนสีนีออนสะท้อนแสงสำหรับกราฟฟิสิกส์ล้ำยุคเพื่อให้น่าสนใจ
+            const gradient = graphCtx.createLinearGradient(0, 0, width, 0);
+            gradient.addColorStop(0, 'rgba(6, 182, 212, 0.2)'); 
+            gradient.addColorStop(0.5, '#06b6d4'); 
+            gradient.addColorStop(1, '#22d3ee'); 
+            graphCtx.strokeStyle = gradient;
+
+            graphCtx.beginPath();
+            graphCtx.moveTo(getX(0), getY(voltageHistory[0]));
+            for (let i = 1; i < voltageHistory.length; i++) {
+                graphCtx.lineTo(getX(i), getY(voltageHistory[i]));
+            }
+            graphCtx.stroke();
+
+            // 3. วาดและแปะรายละเอียดสเกลตัวอักษรกำกับแกนต่างๆ
+            graphCtx.fillStyle = 'rgba(148, 163, 184, 0.7)'; 
+            graphCtx.font = '10px Inter, sans-serif';
+            graphCtx.fillText('+30V', 10, centerY - (30/maxVal)*(height/2)*0.95 - 4);
+            graphCtx.fillText('0V', 10, centerY - 4);
+            graphCtx.fillText('-30V', 10, centerY + (30/maxVal)*(height/2)*0.95 + 10);
+        }
+
+        /**
+         * ลูปควบคุมแอนิเมชันหลักของเอนจินจำลอง 3D (Core Game & Render Loop)
+         */
+        function animate(time) {
+            requestAnimationFrame(animate);
+
+            if (!lastTime) lastTime = time;
+            let delta = time - lastTime;
+            lastTime = time;
+
+            controls.update(); // ปล่อยประมวลผลทิศหน่วงการมองของ OrbitControls
+
+            // ส่วนของตรรกะควบคุมทิศทางการเคลื่อนไหวสำหรับแต่ละ Preset Scenarios
+            if (currentMode === 'p1') { // สถานการณ์: ดันเข้า
+                presetTimer += delta * presetSpeed; 
+                let progress = Math.min(presetTimer / 3000, 1);
+                // ใช้สมการความโค้งสมูท (Ease In Out Cubic Curve) ป้องกันเคลื่อนที่แบบกระตุกตอนเริ่ม
+                let ease = progress < 0.5 ? 2 * progress * progress : -1 + (4 - 2 * progress) * progress;
+                magnetParams.z = -maxPosLimit + (maxPosLimit * ease);
+                sliderMagnet.value = magnetParams.z;
+                if (progress >= 1) setPreset('manual'); 
+
+            } else if (currentMode === 'p2') { // สถานการณ์: ดึงออก
+                presetTimer += delta * presetSpeed; 
+                let progress = Math.min(presetTimer / 1500, 1);
+                let ease = progress < 0.5 ? 2 * progress * progress : -1 + (4 - 2 * progress) * progress;
+                magnetParams.z = 0 - (maxPosLimit * ease);
+                sliderMagnet.value = magnetParams.z;
+                if (progress >= 1) setPreset('manual'); 
+
+            } else if (currentMode === 'p3') { // สถานการณ์: วางนิ่งไว้ด้านใน
+                presetTimer += delta;
+                magnetParams.z = 0; 
+                sliderMagnet.value = 0;
+                if (presetTimer > 3000) setPreset('manual'); 
+
+            } else if (currentMode === 'p4') { // สถานการณ์: แกว่งต่อเนื่อง (AC Current)
+                presetTimer += delta * presetSpeed; 
+                magnetParams.z = Math.sin(presetTimer / 600) * maxPosLimit;
+                sliderMagnet.value = magnetParams.z;
+            }
+
+            // คำนวณฟิสิกส์และระบบวาดกราฟิกแคนวาส
+            updatePhysics(time, delta);
+            updateGraph(currentInducedVoltage);
+
+            // [NEW] รันเรนเดอร์เฟรมของ Practice 3D (Tab 2) ร่วมในแกนลูปของระบบหลัก
+            if (practiceRenderer && practiceScene && practiceCamera) {
+                practiceRenderer.render(practiceScene, practiceCamera);
+            }
+
+            // เอนจินวิเคราะห์อิเล็กตรอนตามกฎของเลนซ์ (Lenz's Law Particle System)
+            if (Math.abs(currentInducedVoltage) > 0.1) {
+                // อัตราสปีดการไหลแปรผันตามแรงเคลื่อนไฟฟ้าที่เหนี่ยวนำจริง
+                const speed = currentInducedVoltage * 0.00005; 
+                currentParticles.forEach(p => {
+                    p.mesh.visible = true;
+                    p.t += speed; 
+                    
+                    // หากประจุวิ่งเลยขอบทองแดงด้านซ้ายหรือขวา ให้ย้อนกลับวนซ้ำเป็นลูปไม่มีวันสิ้นสุด
+                    if (p.t > 1) p.t = p.t % 1;
+                    if (p.t < 0) p.t = 1 + (p.t % 1);
+
+                    const pt = p.path.getPoint(p.t);
+                    p.mesh.position.copy(pt);
+                });
+            } else {
+                // ซ่อนอิเล็กตรอนทันทีเมื่อไม่มีการเหนี่ยวนำทางไฟฟ้าเกิดขึ้น (ฟลักซ์คงที่)
+                currentParticles.forEach(p => {
+                    p.mesh.visible = false;
+                });
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        /**
+         * ฟังก์ชันหลักในการคำนวณและปรับเปลี่ยนสมการเศษส่วนในคอลัมน์ Practice อัตโนมัติ (Live Recalculate)
+         */
+        function recalculateEMF() {
+            // 1. คำนวณความต่างศักย์สำหรับ Tab 1 (Direct Delta)
+            let nVal = parseInt(inputCalcN.value);
+            if (isNaN(nVal)) nVal = 0;
+            let phiVal = parseFloat(inputCalcPhi.value);
+            if (isNaN(phiVal)) phiVal = 0;
+            let tVal = parseFloat(inputCalcT.value);
+            if (isNaN(tVal) || tVal <= 0) tVal = 0.01; 
+
+            displayN.innerText = nVal;
+            displayPhi.innerText = phiVal.toFixed(3);
+            displayT.innerText = tVal.toFixed(2);
+
+            let resultDirect = -1 * nVal * (phiVal / tVal);
+            displayResult.innerText = resultDirect.toFixed(2);
+
+            // 2. คำนวณความต่างศักย์สำหรับ Tab 2 (Phi1 -> Phi2 + 3D Mini Graphic)
+            let bNVal = parseInt(inputCalcBN.value);
+            if (isNaN(bNVal)) bNVal = 0;
+            let phi1Val = parseFloat(inputCalcPhi1.value);
+            if (isNaN(phi1Val)) phi1Val = 0;
+            let phi2Val = parseFloat(inputCalcPhi2.value);
+            if (isNaN(phi2Val)) phi2Val = 0;
+            let bTVal = parseFloat(inputCalcBT.value);
+            if (isNaN(bTVal) || bTVal <= 0) bTVal = 0.01;
+
+            // คํานวณหาผลต่าง Flux: ΔΦ = Φ₂ - Φ₁
+            let deltaPhiVal = phi2Val - phi1Val;
+
+            displayBPhi1.innerText = phi1Val.toFixed(3);
+            displayBPhi2.innerText = phi2Val.toFixed(3);
+            displayBDeltaphi.innerText = (deltaPhiVal >= 0 ? '+' : '') + deltaPhiVal.toFixed(3);
+
+            displayBN.innerText = bNVal;
+            displayBNumPhi.innerText = deltaPhiVal.toFixed(3);
+            displayBNumT.innerText = bTVal.toFixed(2);
+
+            // ε = -N * (ΔΦ / Δt)
+            let resultB = -1 * bNVal * (deltaPhiVal / bTVal);
+            displayBResult.innerText = resultB.toFixed(2);
+
+            // [NEW] ขยับและแสดงปริมาณเส้นสนามแม่เหล็กบน Practice 3D ตามสมการฟิสิกส์จริง
+            if (practiceMagnet1 && practiceMagnet2) {
+                // คำนวณระยะห่าง: ฟลักซ์สูงสุด (0.50 Wb) คือกึ่งกลางพอดี (x=0) ฟลักซ์น้อยย้อนกลับออกไปด้านซ้าย
+                let dx1 = 3.5 * (1.0 - Math.min(1.0, phi1Val / 0.50));
+                let dx2 = 3.5 * (1.0 - Math.min(1.0, phi2Val / 0.50));
+
+                // เลื่อนตำแหน่งแท่งแม่เหล็ก 1 และ 2 ยึดรอบแกน -4.5 และ 4.5
+                practiceMagnet1.position.x = -4.5 - dx1;
+                practiceMagnet2.position.x = 4.5 - dx2;
+
+                // อัปเดตความเข้มเส้นแรงแม่เหล็ก (B-Field lines opacity) ให้แปรผันตรงตามความเข้มฟลักซ์
+                let op1 = 0.05 + 0.65 * (phi1Val / 0.50);
+                let op2 = 0.05 + 0.65 * (phi2Val / 0.50);
+
+                practiceFieldLines1.forEach(line => line.material.opacity = op1);
+                practiceFieldLines2.forEach(line => line.material.opacity = op2);
+            }
+        }
+
+        // =========================================================================
+        // PART 5: ส่วนดักจับและส่งผ่านค่าจากหน้าต่าง UI (DOM Event Listeners)
+        // =========================================================================
+        
+        // เมื่อผู้ใช้งานลากปุ่มตรรกะตำแหน่งแม่เหล็กเอง
+        sliderMagnet.addEventListener('input', (e) => {
+            setPreset('manual'); // หลุดออกจากออโต้เพลย์เข้าสู่ระบบแมนนวลทันที
+            magnetParams.z = parseFloat(e.target.value);
+        });
+
+        // เมื่อผู้ใช้งานปรับเพิ่มลดจำนวนขดสปริง
+        sliderTurns.addEventListener('input', (e) => {
+            coilTurns = parseInt(e.target.value);
+            textTurns.innerText = coilTurns;
+            buildCoil(coilTurns);
+        });
+
+        // เมื่อผู้ใช้งานปรับเพิ่มลดสปีดจำลองอัตโนมัติ
+        sliderSpeed.addEventListener('input', (e) => {
+            presetSpeed = parseFloat(e.target.value);
+            textSpeed.innerText = presetSpeed.toFixed(1) + 'x';
+        });
+
+        // เมื่อผู้ใช้งานปรับระยะเยื้องแกนของแม่เหล็กออกจากสายไฟ
+        sliderOffset.addEventListener('input', (e) => {
+            magnetParams.y = parseFloat(e.target.value);
+            textOffset.innerText = magnetParams.y.toFixed(1);
+            if(magnetGroup) {
+                magnetGroup.position.y = magnetParams.y;
+            }
+        });
+
+        // เมื่อปรับแต่งขีดจำกัดระยะเคลื่อนเดินทางสูงสุดของแม่เหล็ก
+        sliderMaxPos.addEventListener('input', (e) => {
+            setPreset('manual');
+            maxPosLimit = parseFloat(e.target.value);
+            textMaxPos.innerText = maxPosLimit.toFixed(1);
+            
+            // อัปเดตขอบเขตทางกายภาพของสไลเดอร์แม่เหล็กใหม่แบบทันที
+            sliderMagnet.min = -maxPosLimit;
+            sliderMagnet.max = maxPosLimit;
+            
+            // ตรึงความปลอดภัยไม่ให้ตำแหน่งปัจจุบันของแม่เหล็กทะลุออกนอกขอบเขตใหม่
+            if (magnetParams.z > maxPosLimit) {
+                magnetParams.z = maxPosLimit;
+            } else if (magnetParams.z < -maxPosLimit) {
+                magnetParams.z = -maxPosLimit;
+            }
+            sliderMagnet.value = magnetParams.z;
+        });
+
+        // แปะ Event Listeners สำหรับการคำนวณแบบอินเทอร์แอกทีฟของทั้งสอง Tab
+        inputCalcN.addEventListener('input', recalculateEMF);
+        inputCalcPhi.addEventListener('input', recalculateEMF);
+        inputCalcT.addEventListener('input', recalculateEMF);
+
+        inputCalcBN.addEventListener('input', recalculateEMF);
+        inputCalcPhi1.addEventListener('input', recalculateEMF);
+        inputCalcPhi2.addEventListener('input', recalculateEMF);
+        inputCalcBT.addEventListener('input', recalculateEMF);
+
+        // สั่งให้สคริปต์ 3 มิติและภาษาเริ่มต้นพร้อมทำงานเมื่อระบบเอกสาร HTML พร้อมทำงานสมบูรณ์
+        window.onload = function() {
+            init3D();
+            updateUIText(); 
+            recalculateEMF(); // เริ่มคำนวณโจทย์ตัวอย่างครั้งแรกตามดีฟอลต์พารามิเตอร์
+        };
+    </script>
+</body>
+</html>
